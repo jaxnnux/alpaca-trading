@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
+import BacktestPanel from '../backtest/BacktestPanel';
 import './Dashboard.css';
 
 type Tab = 'overview' | 'strategies' | 'builder' | 'backtest' | 'settings';
@@ -141,12 +142,7 @@ const BuilderTab: React.FC = () => {
 };
 
 const BacktestTab: React.FC = () => {
-  return (
-    <div className="backtest-tab">
-      <h2>Backtest Engine</h2>
-      <p>Test your strategies against historical data</p>
-    </div>
-  );
+  return <BacktestPanel />;
 };
 
 const SettingsTab: React.FC = () => {

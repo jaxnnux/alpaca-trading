@@ -65,8 +65,14 @@ export interface BacktestResult {
   maxDrawdown: number;
   winRate: number;
   totalTrades: number;
+  winningTrades: number;
+  losingTrades: number;
+  avgWin: number;
+  avgLoss: number;
   avgTradeDurationDays: number;
   sharpeRatio: number;
+  maxConsecutiveWins: number;
+  maxConsecutiveLosses: number;
   equityCurve: EquityPoint[];
 }
 
