@@ -12,7 +12,15 @@ async def lifespan(app: FastAPI):
     """Application lifespan context manager"""
     # Startup
     print("🚀 AlpacaDesk Engine starting...")
+
+    # Initialize database
+    from .utils.database import init_db
+    print("📊 Initializing database...")
+    init_db()
+    print("✅ Database initialized")
+
     yield
+
     # Shutdown
     print("👋 AlpacaDesk Engine shutting down...")
 
