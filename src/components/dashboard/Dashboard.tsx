@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import BacktestPanel from '../backtest/BacktestPanel';
 import StrategyBuilder from '../builder/StrategyBuilder';
+import ExecutionQuality from '../execution/ExecutionQuality';
+import SettingsPage from '../settings/SettingsPage';
 import './Dashboard.css';
 
 type Tab = 'overview' | 'strategies' | 'builder' | 'backtest' | 'settings';
@@ -101,6 +103,10 @@ const OverviewTab: React.FC = () => {
           </div>
         </div>
       </div>
+
+      <div style={{ marginTop: '2rem' }}>
+        <ExecutionQuality />
+      </div>
     </div>
   );
 };
@@ -139,12 +145,7 @@ const BacktestTab: React.FC = () => {
 };
 
 const SettingsTab: React.FC = () => {
-  return (
-    <div className="settings-tab">
-      <h2>Settings</h2>
-      <p>Configure your AlpacaDesk preferences</p>
-    </div>
-  );
+  return <SettingsPage />;
 };
 
 export default Dashboard;

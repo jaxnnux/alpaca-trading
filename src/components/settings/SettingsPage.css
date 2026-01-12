@@ -1,0 +1,103 @@
+.settings-page {
+  padding: 0;
+}
+
+.settings-header h2 {
+  margin-bottom: 0.5rem;
+}
+
+.settings-header p {
+  color: var(--text-secondary);
+  margin-bottom: 2rem;
+}
+
+.settings-content {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.settings-section .card-header {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.settings-section .card-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+.setting-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.setting-item label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.setting-item small {
+  font-size: 0.8125rem;
+  color: var(--text-tertiary);
+  font-style: italic;
+}
+
+.setting-item-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.checkbox-label input[type="checkbox"],
+.checkbox-label input[type="radio"] {
+  cursor: pointer;
+}
+
+.inline-input {
+  width: 100px;
+}
+
+.inline-label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.settings-actions {
+  display: flex;
+  gap: 1rem;
+  padding: 1.5rem;
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: 0.5rem;
+  position: sticky;
+  bottom: 0;
+}
+
+.btn-large {
+  padding: 0.75rem 1.5rem;
+  font-size: 1rem;
+}
+
+.btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+  background: var(--border-color);
+}
