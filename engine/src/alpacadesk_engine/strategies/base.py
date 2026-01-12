@@ -42,17 +42,58 @@ class BaseStrategy(ABC):
         self.enabled = False
 
     @abstractmethod
-    def analyze(self, market_data: Dict[str, pd.DataFrame]) -> List[Signal]:
+    def analyze(
+        self,
+        market_data: Dict[str, pd.DataFrame],
+        portfolio_value: Optional[float] = None
+    ) -> List[Signal]:
         """
         Analyze market data and generate trading signals
 
         Args:
             market_data: Dictionary mapping symbols to DataFrame with OHLCV data
+            portfolio_value: Current portfolio value for position sizing (optional)
 
         Returns:
             List of Signal objects
         """
         pass
+
+    def _calculate_position_size(
+        self,
+        price: float,
+        portfolio_value: Optional[float] = None,
+        position_size_pct: Optional[float] = None
+    ) -> float:
+        """
+        Calculate position size based on portfolio value and percentage
+
+        Args:
+            price: Current price of the asset
+            portfolio_value: Current portfolio value (required)
+            position_size_pct: Percentage of portfolio to allocate (uses strategy default if not provided)
+
+        Returns:
+            Number of shares to buy
+
+        Raises:
+            ValueError: If portfolio_value is not provided
+        """
+        if portfolio_value is None or portfolio_value <= 0:
+            raise ValueError("Portfolio value must be provided and greater than 0")
+
+        if position_size_pct is None:
+            position_size_pct = self.parameters.get("position_size_pct", 10)
+
+        # Validate position size percentage
+        if position_size_pct <= 0 or position_size_pct > 100:
+            raise ValueError(f"Position size percentage must be between 0 and 100, got {position_size_pct}")
+
+        allocation = portfolio_value * (position_size_pct / 100)
+        quantity = int(allocation / price)
+
+        # Ensure at least 1 share if allocation allows
+        return max(1, quantity) if allocation >= price else 0
 
     def get_parameters(self) -> Dict[str, Any]:
         """Get current strategy parameters"""

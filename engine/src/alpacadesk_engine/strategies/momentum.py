@@ -1,6 +1,6 @@
 """Momentum Breakout Strategy"""
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import pandas as pd
 import numpy as np
 
@@ -39,7 +39,11 @@ class MomentumBreakoutStrategy(BaseStrategy):
             parameters=default_params,
         )
 
-    def analyze(self, market_data: Dict[str, pd.DataFrame]) -> List[Signal]:
+    def analyze(
+        self,
+        market_data: Dict[str, pd.DataFrame],
+        portfolio_value: Optional[float] = None
+    ) -> List[Signal]:
         """
         Generate trading signals based on momentum breakout logic
         """
@@ -74,34 +78,27 @@ class MomentumBreakoutStrategy(BaseStrategy):
             )
 
             if breakout:
-                signals.append(
-                    Signal(
-                        symbol=symbol,
-                        action="buy",
-                        quantity=self._calculate_position_size(current["close"]),
-                        reason=f"Momentum breakout: price {current['close']:.2f} > {lookback}d high {prev['high_n']:.2f}",
-                        metadata={
-                            "entry_price": current["close"],
-                            "stop_loss": current["close"] * (1 - self.parameters["stop_loss_pct"] / 100),
-                            "take_profit": current["close"] * (1 + self.parameters["take_profit_pct"] / 100),
-                        },
+                try:
+                    quantity = self._calculate_position_size(current["close"], portfolio_value)
+                    signals.append(
+                        Signal(
+                            symbol=symbol,
+                            action="buy",
+                            quantity=quantity,
+                            reason=f"Momentum breakout: price {current['close']:.2f} > {lookback}d high {prev['high_n']:.2f}",
+                            metadata={
+                                "entry_price": current["close"],
+                                "stop_loss": current["close"] * (1 - self.parameters["stop_loss_pct"] / 100),
+                                "take_profit": current["close"] * (1 + self.parameters["take_profit_pct"] / 100),
+                            },
+                        )
                     )
-                )
+                except ValueError as e:
+                    # Portfolio value not provided or invalid - skip signal
+                    print(f"Skipping signal for {symbol}: {e}")
+                    continue
 
         return signals
-
-    def _calculate_position_size(self, price: float) -> float:
-        """
-        Calculate position size based on parameters
-
-        Note: In production, this would access portfolio value.
-        For now, returns a placeholder quantity.
-        """
-        # Placeholder: assumes $100,000 portfolio
-        portfolio_value = 100000
-        allocation = portfolio_value * (self.parameters["position_size_pct"] / 100)
-        quantity = int(allocation / price)
-        return max(1, quantity)
 
     def validate_parameters(self) -> bool:
         """Validate strategy parameters"""

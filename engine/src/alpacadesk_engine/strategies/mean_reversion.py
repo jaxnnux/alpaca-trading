@@ -1,6 +1,6 @@
 """Mean Reversion RSI Strategy"""
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import pandas as pd
 import numpy as np
 
@@ -38,7 +38,11 @@ class MeanReversionRSIStrategy(BaseStrategy):
             parameters=default_params,
         )
 
-    def analyze(self, market_data: Dict[str, pd.DataFrame]) -> List[Signal]:
+    def analyze(
+        self,
+        market_data: Dict[str, pd.DataFrame],
+        portfolio_value: Optional[float] = None
+    ) -> List[Signal]:
         """
         Generate trading signals based on RSI mean reversion logic
         """
@@ -67,19 +71,24 @@ class MeanReversionRSIStrategy(BaseStrategy):
                 current["rsi"] < self.parameters["rsi_oversold"]
                 and current["close"] > current["ma"]
             ):
-                signals.append(
-                    Signal(
-                        symbol=symbol,
-                        action="buy",
-                        quantity=self._calculate_position_size(current["close"]),
-                        reason=f"RSI oversold: {current['rsi']:.1f} < {self.parameters['rsi_oversold']}, price above {self.parameters['ma_period']}MA",
-                        metadata={
-                            "rsi": current["rsi"],
-                            "ma": current["ma"],
-                            "entry_price": current["close"],
-                        },
+                try:
+                    quantity = self._calculate_position_size(current["close"], portfolio_value)
+                    signals.append(
+                        Signal(
+                            symbol=symbol,
+                            action="buy",
+                            quantity=quantity,
+                            reason=f"RSI oversold: {current['rsi']:.1f} < {self.parameters['rsi_oversold']}, price above {self.parameters['ma_period']}MA",
+                            metadata={
+                                "rsi": current["rsi"],
+                                "ma": current["ma"],
+                                "entry_price": current["close"],
+                            },
+                        )
                     )
-                )
+                except ValueError as e:
+                    print(f"Skipping signal for {symbol}: {e}")
+                    continue
 
             # Sell signal: RSI overbought (for existing positions)
             elif current["rsi"] > self.parameters["rsi_overbought"]:
@@ -110,14 +119,6 @@ class MeanReversionRSIStrategy(BaseStrategy):
         rsi = 100 - (100 / (1 + rs))
 
         return rsi
-
-    def _calculate_position_size(self, price: float) -> float:
-        """Calculate position size based on parameters"""
-        # Placeholder: assumes $100,000 portfolio
-        portfolio_value = 100000
-        allocation = portfolio_value * (self.parameters["position_size_pct"] / 100)
-        quantity = int(allocation / price)
-        return max(1, quantity)
 
     def validate_parameters(self) -> bool:
         """Validate strategy parameters"""

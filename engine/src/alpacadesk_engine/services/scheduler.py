@@ -9,6 +9,7 @@ from ..strategies.base import BaseStrategy, Signal
 from ..strategies.momentum import MomentumBreakoutStrategy
 from ..strategies.mean_reversion import MeanReversionRSIStrategy
 from ..brokers.alpaca import AlpacaBroker
+from .position_monitor import PositionMonitor
 
 
 class StrategyScheduler:
@@ -27,6 +28,8 @@ class StrategyScheduler:
         self.strategies: Dict[str, Dict] = {}  # strategy_id -> strategy config
         self.active_tasks: Dict[str, asyncio.Task] = {}
         self.is_running = False
+        self.open_positions: Dict[str, float] = {}  # symbol -> quantity (track positions)
+        self.position_monitor = PositionMonitor(broker, check_interval_seconds=10)  # Check SL/TP every 10 seconds
 
     def add_strategy(
         self,
@@ -115,6 +118,9 @@ class StrategyScheduler:
         """Start the scheduler"""
         self.is_running = True
 
+        # Start position monitor
+        await self.position_monitor.start()
+
         # Start tasks for all enabled strategies
         for strategy_id, config in self.strategies.items():
             if config["enabled"] and strategy_id not in self.active_tasks:
@@ -125,6 +131,9 @@ class StrategyScheduler:
     async def stop(self):
         """Stop the scheduler"""
         self.is_running = False
+
+        # Stop position monitor
+        await self.position_monitor.stop()
 
         # Cancel all active tasks
         for task in self.active_tasks.values():
@@ -165,13 +174,35 @@ class StrategyScheduler:
         config["last_execution"] = datetime.utcnow()
         config["executions"] += 1
 
+        # Check position monitor for stop-loss/take-profit signals FIRST
+        monitor_signals = await self.position_monitor.check_positions()
+        if monitor_signals:
+            print(f"Position monitor generated {len(monitor_signals)} exit signals")
+            for signal in monitor_signals:
+                try:
+                    await self._execute_signal(signal)
+                    config["orders_placed"] += 1
+                except Exception as e:
+                    print(f"Failed to execute monitor signal for {signal.symbol}: {e}")
+
+        # Sync open positions from broker
+        self._sync_positions()
+
+        # Get current portfolio value for position sizing
+        try:
+            account = self.broker.get_account()
+            portfolio_value = float(account.get("equity", 0))
+        except Exception as e:
+            print(f"Failed to get account info: {e}")
+            portfolio_value = None  # Strategy will handle None gracefully
+
         # Fetch market data for all symbols
         market_data = await self._fetch_market_data(
             config["symbols"], lookback_days=100
         )
 
-        # Generate signals
-        signals: List[Signal] = strategy.analyze(market_data)
+        # Generate signals with portfolio value for proper position sizing
+        signals: List[Signal] = strategy.analyze(market_data, portfolio_value)
 
         if signals:
             config["signals_generated"] += len(signals)
@@ -213,6 +244,20 @@ class StrategyScheduler:
 
         return market_data
 
+    def _sync_positions(self):
+        """
+        Sync open positions from broker to track for sell orders
+        """
+        try:
+            positions = self.broker.get_positions()
+            self.open_positions = {
+                pos["symbol"]: float(pos["qty"])
+                for pos in positions
+            }
+        except Exception as e:
+            print(f"Failed to sync positions: {e}")
+            # Keep existing position data if sync fails
+
     async def _execute_signal(self, signal: Signal):
         """
         Execute a trading signal by placing an order
@@ -228,16 +273,58 @@ class StrategyScheduler:
             )
             print(f"BUY {signal.quantity} {signal.symbol}: {signal.reason}")
 
+            # Track position (update on buy)
+            self.open_positions[signal.symbol] = self.open_positions.get(signal.symbol, 0) + signal.quantity
+
+            # Add to position monitor for stop-loss/take-profit tracking
+            if signal.metadata:
+                entry_price = signal.metadata.get("entry_price")
+                stop_loss = signal.metadata.get("stop_loss")
+                take_profit = signal.metadata.get("take_profit")
+
+                if entry_price and (stop_loss or take_profit):
+                    self.position_monitor.add_position(
+                        symbol=signal.symbol,
+                        quantity=signal.quantity,
+                        entry_price=entry_price,
+                        stop_loss=stop_loss,
+                        take_profit=take_profit
+                    )
+
         elif signal.action == "sell":
+            # Get actual position quantity
+            if signal.quantity > 0:
+                # Specific quantity provided
+                sell_qty = signal.quantity
+            else:
+                # Sell entire position (quantity = 0 means "sell all")
+                sell_qty = self.open_positions.get(signal.symbol, 0)
+
+                if sell_qty == 0:
+                    print(f"SKIP SELL {signal.symbol}: No position held")
+                    return
+
             # Place sell order
             self.broker.submit_order(
                 symbol=signal.symbol,
-                qty=signal.quantity if signal.quantity > 0 else 1,  # TODO: Get actual position size
+                qty=sell_qty,
                 side="sell",
                 order_type="market",
                 time_in_force="day",
             )
-            print(f"SELL {signal.symbol}: {signal.reason}")
+            print(f"SELL {sell_qty} {signal.symbol}: {signal.reason}")
+
+            # Update tracked position
+            current_qty = self.open_positions.get(signal.symbol, 0)
+            new_qty = max(0, current_qty - sell_qty)
+            if new_qty == 0:
+                self.open_positions.pop(signal.symbol, None)
+                # Remove from position monitor when fully closed
+                self.position_monitor.remove_position(signal.symbol)
+            else:
+                self.open_positions[signal.symbol] = new_qty
+                # Update quantity in position monitor
+                self.position_monitor.update_position_quantity(signal.symbol, new_qty)
 
     def get_status(self) -> Dict:
         """

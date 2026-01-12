@@ -1,6 +1,6 @@
 """Bollinger Band Bounce Strategy"""
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import pandas as pd
 import numpy as np
 
@@ -36,7 +36,11 @@ class BollingerBandStrategy(BaseStrategy):
             parameters=default_params,
         )
 
-    def analyze(self, market_data: Dict[str, pd.DataFrame]) -> List[Signal]:
+    def analyze(
+        self,
+        market_data: Dict[str, pd.DataFrame],
+        portfolio_value: Optional[float] = None
+    ) -> List[Signal]:
         """
         Generate trading signals based on Bollinger Band bounces
         """
@@ -73,20 +77,25 @@ class BollingerBandStrategy(BaseStrategy):
                 and current["close"] > current["lower_band"]
                 and current["close"] < current["sma"]  # Still below middle
             ):
-                signals.append(
-                    Signal(
-                        symbol=symbol,
-                        action="buy",
-                        quantity=self._calculate_position_size(current["close"]),
-                        reason=f"Bollinger bounce: price bounced off lower band at {current['lower_band']:.2f}",
-                        metadata={
-                            "entry_price": current["close"],
-                            "lower_band": current["lower_band"],
-                            "upper_band": current["upper_band"],
-                            "sma": current["sma"],
-                        },
+                try:
+                    quantity = self._calculate_position_size(current["close"], portfolio_value)
+                    signals.append(
+                        Signal(
+                            symbol=symbol,
+                            action="buy",
+                            quantity=quantity,
+                            reason=f"Bollinger bounce: price bounced off lower band at {current['lower_band']:.2f}",
+                            metadata={
+                                "entry_price": current["close"],
+                                "lower_band": current["lower_band"],
+                                "upper_band": current["upper_band"],
+                                "sma": current["sma"],
+                            },
+                        )
                     )
-                )
+                except ValueError as e:
+                    print(f"Skipping signal for {symbol}: {e}")
+                    continue
 
             # Sell signal: touch upper band
             elif (
@@ -107,14 +116,6 @@ class BollingerBandStrategy(BaseStrategy):
                 )
 
         return signals
-
-    def _calculate_position_size(self, price: float) -> float:
-        """Calculate position size based on parameters"""
-        # Placeholder: assumes $100,000 portfolio
-        portfolio_value = 100000
-        allocation = portfolio_value * (self.parameters["position_size_pct"] / 100)
-        quantity = int(allocation / price)
-        return max(1, quantity)
 
     def validate_parameters(self) -> bool:
         """Validate strategy parameters"""

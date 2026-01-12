@@ -1,6 +1,6 @@
 """Dual Moving Average Crossover Strategy"""
 
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 import pandas as pd
 import numpy as np
 
@@ -36,7 +36,11 @@ class DualMovingAverageStrategy(BaseStrategy):
             parameters=default_params,
         )
 
-    def analyze(self, market_data: Dict[str, pd.DataFrame]) -> List[Signal]:
+    def analyze(
+        self,
+        market_data: Dict[str, pd.DataFrame],
+        portfolio_value: Optional[float] = None
+    ) -> List[Signal]:
         """
         Generate trading signals based on MA crossover logic
         """
@@ -70,19 +74,24 @@ class DualMovingAverageStrategy(BaseStrategy):
                 and current["fast_ma"] > current["slow_ma"]
                 and current["close"] > current["trend_ma"]  # Trend filter
             ):
-                signals.append(
-                    Signal(
-                        symbol=symbol,
-                        action="buy",
-                        quantity=self._calculate_position_size(current["close"]),
-                        reason=f"Golden cross: {fast_ma}MA crossed above {slow_ma}MA, price above {trend_ma}MA trend filter",
-                        metadata={
-                            "fast_ma": current["fast_ma"],
-                            "slow_ma": current["slow_ma"],
-                            "entry_price": current["close"],
-                        },
+                try:
+                    quantity = self._calculate_position_size(current["close"], portfolio_value)
+                    signals.append(
+                        Signal(
+                            symbol=symbol,
+                            action="buy",
+                            quantity=quantity,
+                            reason=f"Golden cross: {fast_ma}MA crossed above {slow_ma}MA, price above {trend_ma}MA trend filter",
+                            metadata={
+                                "fast_ma": current["fast_ma"],
+                                "slow_ma": current["slow_ma"],
+                                "entry_price": current["close"],
+                            },
+                        )
                     )
-                )
+                except ValueError as e:
+                    print(f"Skipping signal for {symbol}: {e}")
+                    continue
 
             # Death cross (sell signal)
             elif (
@@ -103,14 +112,6 @@ class DualMovingAverageStrategy(BaseStrategy):
                 )
 
         return signals
-
-    def _calculate_position_size(self, price: float) -> float:
-        """Calculate position size based on parameters"""
-        # Placeholder: assumes $100,000 portfolio
-        portfolio_value = 100000
-        allocation = portfolio_value * (self.parameters["position_size_pct"] / 100)
-        quantity = int(allocation / price)
-        return max(1, quantity)
 
     def validate_parameters(self) -> bool:
         """Validate strategy parameters"""
