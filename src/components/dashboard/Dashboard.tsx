@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useAuthStore } from '../../store/authStore';
 import BacktestPanel from '../backtest/BacktestPanel';
+import StrategyBuilder from '../builder/StrategyBuilder';
 import './Dashboard.css';
 
 type Tab = 'overview' | 'strategies' | 'builder' | 'backtest' | 'settings';
@@ -130,15 +131,7 @@ const StrategiesTab: React.FC = () => {
 };
 
 const BuilderTab: React.FC = () => {
-  return (
-    <div className="builder-tab">
-      <h2>Visual Strategy Builder</h2>
-      <p>Create custom strategies with drag-and-drop blocks</p>
-      <div className="builder-placeholder">
-        <p>Builder interface coming soon...</p>
-      </div>
-    </div>
-  );
+  return <StrategyBuilder />;
 };
 
 const BacktestTab: React.FC = () => {
