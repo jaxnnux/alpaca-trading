@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 
-from .api import auth, account, orders, strategies, backtest
+from .api import auth, account, orders, strategies, backtest, streaming, scheduler
 
 
 @asynccontextmanager
@@ -39,6 +39,8 @@ app.include_router(account.router, prefix="/api/account", tags=["account"])
 app.include_router(orders.router, prefix="/api/orders", tags=["orders"])
 app.include_router(strategies.router, prefix="/api/strategies", tags=["strategies"])
 app.include_router(backtest.router, prefix="/api/backtest", tags=["backtest"])
+app.include_router(streaming.router, prefix="/api/streaming", tags=["streaming"])
+app.include_router(scheduler.router, prefix="/api/scheduler", tags=["scheduler"])
 
 
 @app.get("/")

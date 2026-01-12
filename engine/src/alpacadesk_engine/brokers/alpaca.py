@@ -5,10 +5,13 @@ from datetime import datetime
 
 from alpaca.trading.client import TradingClient
 from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.live import StockDataStream
 from alpaca.trading.requests import MarketOrderRequest, LimitOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
+import asyncio
+from threading import Thread
 
 from .interface import BrokerInterface
 
@@ -21,12 +24,17 @@ class AlpacaBroker(BrokerInterface):
     def __init__(self):
         self.trading_client: Optional[TradingClient] = None
         self.data_client: Optional[StockHistoricalDataClient] = None
+        self.stream_client: Optional[StockDataStream] = None
         self.is_paper = True
+        self._stream_thread: Optional[Thread] = None
+        self._stream_loop: Optional[asyncio.AbstractEventLoop] = None
 
     def authenticate(self, api_key: str, secret_key: str, paper: bool = True) -> bool:
         """Authenticate with Alpaca"""
         try:
             self.is_paper = paper
+            self._api_key = api_key
+            self._secret_key = secret_key
 
             # Create trading client
             self.trading_client = TradingClient(
@@ -37,6 +45,12 @@ class AlpacaBroker(BrokerInterface):
 
             # Create data client
             self.data_client = StockHistoricalDataClient(
+                api_key=api_key,
+                secret_key=secret_key,
+            )
+
+            # Create stream client
+            self.stream_client = StockDataStream(
                 api_key=api_key,
                 secret_key=secret_key,
             )
@@ -239,11 +253,60 @@ class AlpacaBroker(BrokerInterface):
 
     def subscribe_quotes(self, symbols: List[str], callback):
         """Subscribe to real-time quotes via WebSocket"""
-        # TODO: Implement WebSocket subscription
-        # This would use alpaca.data.live.StockDataStream
-        pass
+        if not self.stream_client:
+            raise Exception("Not authenticated")
+
+        async def quote_handler(data):
+            """Handle incoming quote data"""
+            callback({
+                "symbol": data.symbol,
+                "bid_price": float(data.bid_price) if data.bid_price else None,
+                "ask_price": float(data.ask_price) if data.ask_price else None,
+                "bid_size": int(data.bid_size) if data.bid_size else None,
+                "ask_size": int(data.ask_size) if data.ask_size else None,
+                "timestamp": data.timestamp.isoformat() if data.timestamp else None,
+            })
+
+        # Subscribe to quotes
+        self.stream_client.subscribe_quotes(quote_handler, *symbols)
+
+        # Start stream in separate thread if not already running
+        if self._stream_thread is None or not self._stream_thread.is_alive():
+            self._start_stream()
+
+    def _start_stream(self):
+        """Start the WebSocket stream in a separate thread"""
+        def run_stream():
+            # Create new event loop for this thread
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            self._stream_loop = loop
+
+            try:
+                # Run the stream
+                loop.run_until_complete(self.stream_client.run())
+            except Exception as e:
+                print(f"Stream error: {e}")
+            finally:
+                loop.close()
+
+        self._stream_thread = Thread(target=run_stream, daemon=True)
+        self._stream_thread.start()
 
     def unsubscribe_quotes(self, symbols: List[str]):
         """Unsubscribe from real-time quotes"""
-        # TODO: Implement WebSocket unsubscription
-        pass
+        if not self.stream_client:
+            return
+
+        # Unsubscribe from symbols
+        for symbol in symbols:
+            self.stream_client.unsubscribe_quotes(symbol)
+
+    def stop_stream(self):
+        """Stop the WebSocket stream"""
+        if self.stream_client and self._stream_loop:
+            # Stop the stream
+            asyncio.run_coroutine_threadsafe(
+                self.stream_client.stop_ws(),
+                self._stream_loop
+            )

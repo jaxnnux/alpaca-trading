@@ -4,6 +4,12 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any
 from datetime import datetime, timedelta
+import pandas as pd
+
+from ..backtest.engine import BacktestEngine
+from ..strategies.momentum import MomentumBreakoutStrategy
+from ..strategies.mean_reversion import MeanReversionRSIStrategy
+from .auth import get_current_client
 
 router = APIRouter()
 
@@ -23,64 +29,120 @@ class BacktestResult(BaseModel):
     max_drawdown: float
     win_rate: float
     total_trades: int
+    winning_trades: int
+    losing_trades: int
+    avg_win: float
+    avg_loss: float
     avg_trade_duration_days: float
     sharpe_ratio: float
+    max_consecutive_wins: int
+    max_consecutive_losses: int
     equity_curve: List[Dict[str, Any]]
 
 
 @router.post("/run", response_model=BacktestResult)
 async def run_backtest(request: BacktestRequest):
     """
-    Run a backtest on historical data
-
-    This is a placeholder implementation. In production, this would:
-    1. Fetch historical data from Alpaca
-    2. Simulate strategy execution
-    3. Calculate performance metrics
+    Run a backtest on historical data with realistic execution simulation
     """
     try:
-        # Placeholder simulation data
-        # In production, implement actual backtesting logic
+        # Get authenticated client
+        client = get_current_client()
 
-        # Simulate equity curve
-        start = datetime.fromisoformat(request.start_date)
-        end = datetime.fromisoformat(request.end_date)
-        days = (end - start).days
+        # Parse dates
+        start_date = datetime.fromisoformat(request.start_date)
+        end_date = datetime.fromisoformat(request.end_date)
 
-        equity_curve = []
-        equity = request.initial_capital
+        # Create strategy instance
+        strategy = _create_strategy(
+            request.strategy_type,
+            request.symbols,
+            request.parameters
+        )
 
-        for i in range(0, days, 7):  # Weekly snapshots
-            date = start + timedelta(days=i)
-            # Simulate returns (replace with actual backtest logic)
-            equity *= 1.005  # Placeholder 0.5% weekly growth
+        if strategy is None:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Unknown strategy type: {request.strategy_type}"
+            )
 
-            equity_curve.append({
-                "date": date.isoformat(),
-                "equity": equity,
-                "profit_loss": equity - request.initial_capital,
-                "profit_loss_pct": ((equity - request.initial_capital) / request.initial_capital) * 100,
-            })
+        # Fetch historical data
+        market_data = {}
+        for symbol in request.symbols:
+            try:
+                bars = client.get_bars(
+                    symbol=symbol,
+                    timeframe="1day",
+                    start=start_date - timedelta(days=200),  # Extra data for indicators
+                    end=end_date
+                )
 
-        # Calculate metrics (placeholder values)
-        total_return = ((equity - request.initial_capital) / request.initial_capital) * 100
-        buy_hold_return = total_return * 0.7  # Placeholder: strategy outperforms 30%
+                if bars:
+                    df = pd.DataFrame(bars)
+                    df["timestamp"] = pd.to_datetime(df["timestamp"])
+                    df.set_index("timestamp", inplace=True)
+                    market_data[symbol] = df
+                else:
+                    raise Exception(f"No data available for {symbol}")
 
+            except Exception as e:
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"Failed to fetch data for {symbol}: {str(e)}"
+                )
+
+        # Create backtest engine
+        engine = BacktestEngine(
+            initial_capital=request.initial_capital,
+            slippage_pct=0.05,  # 0.05% average slippage
+        )
+
+        # Run backtest
+        metrics, equity_curve = engine.run(
+            strategy=strategy,
+            market_data=market_data,
+            start_date=start_date,
+            end_date=end_date
+        )
+
+        # Format result
         result = BacktestResult(
-            total_return=total_return,
-            buy_and_hold_return=buy_hold_return,
-            max_drawdown=-18.5,  # Placeholder
-            win_rate=58.0,  # Placeholder
-            total_trades=47,  # Placeholder
-            avg_trade_duration_days=12.0,  # Placeholder
-            sharpe_ratio=1.2,  # Placeholder
+            total_return=metrics.total_return,
+            buy_and_hold_return=metrics.buy_and_hold_return,
+            max_drawdown=metrics.max_drawdown,
+            win_rate=metrics.win_rate,
+            total_trades=metrics.total_trades,
+            winning_trades=metrics.winning_trades,
+            losing_trades=metrics.losing_trades,
+            avg_win=metrics.avg_win,
+            avg_loss=metrics.avg_loss,
+            avg_trade_duration_days=metrics.avg_trade_duration_days,
+            sharpe_ratio=metrics.sharpe_ratio,
+            max_consecutive_wins=metrics.max_consecutive_wins,
+            max_consecutive_losses=metrics.max_consecutive_losses,
             equity_curve=equity_curve,
         )
 
         return result
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Backtest failed: {str(e)}")
+
+
+def _create_strategy(strategy_type: str, symbols: List[str], parameters: Dict[str, Any]):
+    """Create strategy instance based on type"""
+    strategy_map = {
+        "momentum_breakout": MomentumBreakoutStrategy,
+        "mean_reversion_rsi": MeanReversionRSIStrategy,
+    }
+
+    strategy_class = strategy_map.get(strategy_type)
+    if strategy_class:
+        return strategy_class(symbols, parameters)
+
+    return None
 
 
 @router.get("/templates")
